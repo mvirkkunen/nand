@@ -156,8 +156,6 @@ impl Simulator {
 
         let gates = prune_gates(gates, n_inputs);
 
-        println!("nots: {}", gates.iter().filter(|g| g.0 == g.1).count());
-
         /*for x in gates.iter().enumerate() {
             println!("{} <- ({}, {}, {:?})", x.0, x.1.0, x.1.1, x.1.2);
         }*/

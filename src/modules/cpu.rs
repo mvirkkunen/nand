@@ -111,7 +111,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
 
     step_index << latch_cond(
         [
-            (step_next, zerov(8)),
+            (step_next, zero() * 2),
             (one(), increment(step_index)),
         ],
         clk,
@@ -199,16 +199,3 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
  10000000 oooooooo jmp o
 
 */
-
-/*
-let addr = vv(6);
-addr.clone() << latchn(increment(addr.clone()), clk).name("addr");
-
-let data = &[
-    0x00, 0xff, 0x09, 0x09, 0x06, 0x00,
-    0x7e, 0x81, 0x81, 0x7e, 0x00,
-    0xff, 0x80, 0x80, 0x00,
-    0xff, 0x80, 0x80, 0x00,
-    0x7e, 0x81, 0x81, 0x7e, 0x00,
-];
-rom(8, data, addr).name("out");*/

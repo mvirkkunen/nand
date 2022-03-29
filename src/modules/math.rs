@@ -17,15 +17,12 @@ pub fn increment(a: VVec) -> VVec {
 /// Full adder, outputs a + b + c
 pub fn adder(a: VVec, b: VVec, mut c: V) -> (VVec, V) {
     let s = a
-        .iter()
-        .zip(b.iter())
-        .map(|(a, b)| {
+        .zipmap(b, |a, b| {
             let s_ab = a ^ b;
             let s = s_ab ^ c;
             c = (a & b) | (s_ab & c);
             s
-        })
-        .collect();
+        });
 
     (s, c)
 }

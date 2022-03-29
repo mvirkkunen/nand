@@ -1,7 +1,7 @@
 use super::*;
 
 pub fn decoder(addr: VVec) -> VVec {
-    let not_addr: VVec = addr.iter().map(|a| !a).collect();
+    let not_addr: VVec = addr.iter().map(|a| !a).vv();
 
     (0..(1 << addr.len()))
         .map(|index|
@@ -16,7 +16,7 @@ pub fn decoder(addr: VVec) -> VVec {
                     })
                 .vv()
                 .andv())
-        .collect()
+        .vv()
 }
 
 pub fn rom(bits: usize, data: &[u64], addr: VVec, bus_sel: V) -> VVec {
@@ -40,7 +40,7 @@ pub fn ram(size: usize, addr: VVec, data: VVec, w: V, bus_sel: V, clk: V, rstn: 
         .iter()
         .take(size)
         .map(|sel| {
-            latch(data, bus_sel & sel & w, clk, rstn) & sel
+            latch(data, bus_sel & w & sel, clk, rstn) & sel
         })
         .orm() & bus_sel
 }

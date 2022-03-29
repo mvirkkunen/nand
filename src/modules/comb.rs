@@ -36,12 +36,19 @@ impl BitXor for V {
     }
 }
 
-fn vvec_combine(vec: &[V], f: fn(V, V) -> V) -> V {
-    if vec.len() == 1 {
-        return vec[0];
-    } else {
-        let (l, r) = vec.split_at(vec.len() / 2);
-        return f(vvec_combine(l, f), vvec_combine(r, f));
+impl Mul<usize> for V {
+    type Output = VVec;
+
+    fn mul(self, other: usize) -> Self::Output {
+        (0..other).map(|_| self).vv()
+    }
+}
+
+impl Mul<V> for usize {
+    type Output = VVec;
+
+    fn mul(self, other: V) -> Self::Output {
+        other * self
     }
 }
 
@@ -62,15 +69,36 @@ impl VVec {
     }
 
     pub fn andv(self) -> V {
-        vvec_combine(&self.as_vec(), |a, b| a & b)
+        self.combine(|a, b| a & b)
     }
 
     pub fn orv(self) -> V {
-        vvec_combine(&self.as_vec(), |a, b| a | b)
+        self.combine(|a, b| a | b)
     }
 
     pub fn slice(self, r: Range<usize>) -> VVec {
-        self.iter().skip(r.start).take(r.end - r.start).collect()
+        self.iter().skip(r.start).take(r.end - r.start).vv()
+    }
+
+    pub fn zipmap(self, other: VVec, mut f: impl FnMut(V, V) -> V) -> VVec {
+        if self.len() != other.len() {
+            panic!("V size mismatch");
+        }
+
+        self.iter().zip(other.iter()).map(|(a, b)| f(a, b)).vv()
+    }
+
+    fn combine(self, f: fn(V, V) -> V) -> V {
+        fn combine(vec: &[V], f: fn(V, V) -> V) -> V {
+            if vec.len() == 1 {
+                vec[0]
+            } else {
+                let (l, r) = vec.split_at(vec.len() / 2);
+                f(combine(l, f), combine(r, f))
+            }
+        }
+
+        combine(&self.as_vec(), f)
     }
 }
 
@@ -110,7 +138,7 @@ impl BitAnd<VVec> for VVec {
     type Output = VVec;
 
     fn bitand(self, other: VVec) -> Self::Output {
-        self.iter().zip(other.iter()).map(|(a, b)| a & b).collect()
+        self.zipmap(other, |a, b| a & b)
     }
 }
 
@@ -134,7 +162,7 @@ impl BitOr<VVec> for VVec {
     type Output = VVec;
 
     fn bitor(self, other: VVec) -> Self::Output {
-        self.iter().zip(other.iter()).map(|(a, b)| a | b).collect()
+        self.zipmap(other, |a, b| a | b)
     }
 }
 
@@ -142,7 +170,7 @@ impl BitXor<VVec> for VVec {
     type Output = VVec;
 
     fn bitxor(self, other: VVec) -> Self::Output {
-        self.iter().zip(other.iter()).map(|(a, b)| a ^ b).collect()
+        self.zipmap(other, |a, b| a ^ b)
     }
 }
 
@@ -159,7 +187,11 @@ impl<T> VVecMatrix for T where T: IntoIterator<Item=VVec> {
         } else if vvs.len() == 1 {
             return vvs[0];
         } else {
-            vvs.iter().fold(vvs[0], |a, &b| a | b)
+            (0..vvs[0].len())
+                .map(|index| {
+                    vvs.iter().map(|vv| vv.at(index)).vv().orv()
+                })
+                .vv()
         }
     }
 }

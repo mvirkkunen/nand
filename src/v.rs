@@ -119,10 +119,6 @@ pub fn zero() -> V {
     GateBuilder::zero()
 }
 
-pub fn zerov(size: usize) -> VVec {
-    (0..size).map(|_| GateBuilder::zero()).collect()
-}
-
 pub fn one() -> V {
     GateBuilder::one()
 }
