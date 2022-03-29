@@ -143,17 +143,6 @@ impl Simulator {
         n_inputs: u32,
         global_inputs: BTreeMap<String, u32>) -> Simulator
     {
-        /*let gates = &[
-            (0, 0, None),
-            (0, 0, None),
-            (1, 1, None),
-            (2, 6, None),
-            (3, 3, None),
-            (0, 4, None),
-            (1, 1, None),
-        ];
-        let gates = prune_gates(gates, 1);*/
-
         let gates = prune_gates(gates, n_inputs);
 
         /*for x in gates.iter().enumerate() {
@@ -197,12 +186,6 @@ impl Simulator {
             .collect::<Vec<_>>();
 
         let mut state = vec![0; state_len];
-        // constant 1
-        state[0] = 2;
-
-        /*for (i, m) in map.iter().enumerate() {
-            println!("{} {:?}", i, m);
-        }*/
 
         Simulator {
             map,

@@ -22,8 +22,8 @@ pub struct InputBuilder {
 impl InputBuilder {
     pub fn new() -> Self {
         InputBuilder {
-            // 0 and 1 are reserved for constants
-            n_inputs: 2,
+            // 0 is reserved for hard-wired zero
+            n_inputs: 1,
             global_inputs: BTreeMap::new(),
         }
     }
@@ -99,10 +99,6 @@ impl GateBuilder {
 
     pub fn zero() -> V {
         V(0)
-    }
-
-    pub fn one() -> V {
-        V(1)
     }
 
     pub fn v(&mut self) -> V {

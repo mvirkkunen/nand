@@ -120,13 +120,9 @@ pub fn zero() -> V {
 }
 
 pub fn one() -> V {
-    GateBuilder::one()
+    !zero()
 }
 
 pub fn nand(a: V, b: V) -> V {
     builder(|c| c.nand(a, b))
 }
-
-//pub fn global(name: &str) -> V {
-//    builder(|c| c.global(name))
-//}
