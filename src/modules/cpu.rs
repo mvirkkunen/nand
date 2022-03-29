@@ -50,7 +50,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
     // control logic
 
     let y_to_addr = (ins_ldr | ins_str) & (step.at(1));
-    let x_to_data = ins_str & (step.at(1));
+    let x_to_data = ins_str & step.at(1);
     let data_to_x = (ins_ldi | ins_ldr) & step.at(1);
     let data_to_alu = ins_ldi | ins_jmp;
     let data_write = ins_str & step.at(1);

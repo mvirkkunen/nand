@@ -14,15 +14,6 @@ pub struct Input(pub u32);
 #[derive(Copy, Clone)]
 pub struct Output(pub u32);
 
-pub struct Simulator {
-    map: Vec<(BitAddr, BitAddr)>,
-    cur_out: usize,
-    state: [Vec<u64>; 2],
-    n_inputs: u32,
-    names: Vec<(u32, String, String)>,
-    global_inputs: BTreeMap<String, u32>,
-}
-
 fn crot(s: u8, d: u8) -> u8 {
     if s == d {
         0
@@ -32,44 +23,6 @@ fn crot(s: u8, d: u8) -> u8 {
         64 + s - d
     }
 }
-
-/*fn remove_gates(
-    gates: &mut Vec<(u32, u32, Option<String>)>,
-    start: u32,
-    remove_ids: &[(u32, u32)])
-{
-    let mut remove_ids = remove_ids.to_vec();
-
-    for i in 0..remove_ids.len() {
-        let (oid, nid) = remove_ids[i];
-
-        for gate in &mut gates[start as usize..] {
-            if gate.0 == oid {
-                gate.0 = nid;
-            } else if gate.0 > oid {
-                gate.0 -= 1;
-            }
-
-            if gate.1 == oid {
-                gate.1 = nid;
-            } else if gate.1 > oid {
-                gate.1 -= 1;
-            }
-        }
-
-        for (ref mut roid, ref mut rnid) in remove_ids.iter_mut() {
-            if *roid > oid {
-                *roid -= 1;
-            }
-
-            if *rnid > oid {
-                *rnid -= 1;
-            }
-        }
-
-        gates.remove(oid as usize);
-    }
-}*/
 
 fn remove_gate(
     gates: &mut Vec<(u32, u32, Option<String>)>,
@@ -115,7 +68,7 @@ fn prune_gates(
                 continue;
             }
 
-            if gates.iter().skip(start as usize).find(|g| g.0 == id || g.1 == id).is_none() {
+            if gates.iter().skip(start as usize).find(|o| o.0 == id || o.1 == id).is_none() {
                 // remove unused gate
 
                 remove_gate(&mut gates, start, id, 0);
@@ -127,7 +80,13 @@ fn prune_gates(
                 .enumerate()
                 .skip(start as usize)
                 .map(|(oid, o)| (oid as u32, o))
-                .find(|(oid, o)| *oid < id && *o == cur)
+                .find(|(oid, o)|
+                    *oid < id
+                    && (
+                        (o.0 == cur.0 && o.1 == cur.1)
+                        || (o.0 == cur.1 && o.1 == cur.0)
+                    )
+                    && o.2 == cur.2)
             {
                 // remove identical gate
 
@@ -135,16 +94,16 @@ fn prune_gates(
                 continue;
             }
 
-            // is_none checks are to keep "pin()" gates
+            // is_none check is to keep "pin()" gates
             if cur.0 == cur.1 && cur.2.is_none() {
                 if let Some((_, &(nid, _, _))) = gates
                     .iter()
                     .enumerate()
                     .skip(start as usize)
                     .map(|(oid, o)| (oid as u32, o))
-                    .find(|(oid, o)| cur.0 == *oid && o.0 == o.1 && o.2.is_none())
+                    .find(|(oid, o)| cur.0 == *oid && o.0 == o.1)
                 {
-                    // simplify NOT NOT a to a
+                    // simplify !!a -> a
 
                     remove_gate(&mut gates, start, id, nid);
 
@@ -165,6 +124,17 @@ fn prune_gates(
     }
 
     gates
+}
+
+pub struct Simulator {
+    map: Vec<(BitAddr, BitAddr)>,
+    cur_out: usize,
+    state: [Vec<u64>; 2],
+    n_inputs: u32,
+    names: Vec<(u32, String, String)>,
+    global_inputs: BTreeMap<String, u32>,
+    max_steps: usize,
+    num_gates: usize,
 }
 
 impl Simulator {
@@ -236,8 +206,6 @@ impl Simulator {
             println!("{} {:?}", i, m);
         }*/
 
-        println!("{} ops/step", map.len());
-
         Simulator {
             map,
             cur_out: 0,
@@ -245,6 +213,8 @@ impl Simulator {
             n_inputs,
             global_inputs,
             names,
+            max_steps: 0,
+            num_gates: gates.len(),
         }
     }
 
@@ -299,7 +269,10 @@ impl Simulator {
     }
 
     pub fn step_by(&mut self, steps: usize) {
-        for _i in 0..steps {
+        let mut i = 0;
+        while i < steps {
+            i += 1;
+
             self.step();
 
             if self.state[0] == self.state[1] {
@@ -308,7 +281,7 @@ impl Simulator {
             }
         }
 
-        //println!("{:?}", self.state[self.cur_out]);
+        self.max_steps = std::cmp::max(self.max_steps, i);
     }
 
     pub fn snapshot(&mut self) {
@@ -331,6 +304,10 @@ impl Simulator {
         for (_, name, out) in &self.names {
             println!("{name:pad$}{out}", name=name, pad=pad, out=out);
         }
+
+        println!("max steps: {}", self.max_steps);
+
+        println!("gates: {}", self.num_gates);
     }
 }
 

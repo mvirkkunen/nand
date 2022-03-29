@@ -14,7 +14,7 @@ fn main() {
     let (clk_i, clk) = builder.input();
     let (miso_i, miso) = builder.input();
 
-    let rom_data = vec![
+    let rom_data: Vec<u8> = vec![
         0x12, 0x10, // ldi r2, 0x10
         0x13, 0x01, // ldi r3, 1
 
@@ -66,7 +66,7 @@ fn main() {
         data_bus << (
             data_bus_out
             | rom(8, rom_data.iter().map(|&x| x as u64).collect::<Vec<_>>().as_slice(), addr_bus.slice(0..7), sel_rom)
-            | ram(4, addr_bus.slice(0..7), data_bus, data_write, sel_ram, clk, !rst)
+            //| ram(4, addr_bus.slice(0..7), data_bus, data_write, sel_ram, clk, !rst)
             | spi.data
         );
 
@@ -80,7 +80,7 @@ fn main() {
     sim.set(rst_i, true);
     sim.step_by(1000);
     sim.set(rst_i, false);
-    sim.step_by(1000);
+    //sim.step_by(1000);
 
     //let (clocks, snaps, steps) = (10, 10, 1);
     let (clocks, snaps, steps) = (300, 1, 1000);
