@@ -36,9 +36,12 @@ impl V {
 }
 
 impl VVec {
+    pub fn as_vec(self) -> Vec<V> {
+        builder(|gb| gb.vv_get(self))
+    }
+
     pub fn iter(self) -> impl Iterator<Item=V> {
-        let v = builder(|gb| gb.vv_get(self));
-        v.into_iter()
+        self.as_vec().into_iter()
     }
 
     pub fn len(self) -> usize {

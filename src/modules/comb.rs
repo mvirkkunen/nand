@@ -36,6 +36,15 @@ impl BitXor for V {
     }
 }
 
+fn vvec_combine(vec: &[V], f: fn(V, V) -> V) -> V {
+    if vec.len() == 1 {
+        return vec[0];
+    } else {
+        let (l, r) = vec.split_at(vec.len() / 2);
+        return f(vvec_combine(l, f), vvec_combine(r, f));
+    }
+}
+
 impl VVec {
     pub fn eq(self, other: VVec) -> V {
         !(self ^ other).orv()
@@ -52,12 +61,12 @@ impl VVec {
             .andv()
     }
 
-    pub fn andv(&self) -> V {
-        self.iter().fold(one(), |a, b| a & b)
+    pub fn andv(self) -> V {
+        vvec_combine(&self.as_vec(), |a, b| a & b)
     }
 
-    pub fn orv(&self) -> V {
-        self.iter().fold(zero(), |a, b| a | b)
+    pub fn orv(self) -> V {
+        vvec_combine(&self.as_vec(), |a, b| a | b)
     }
 
     pub fn slice(self, r: Range<usize>) -> VVec {
