@@ -2,6 +2,11 @@ use std::collections::BTreeMap;
 
 use crate::simulator::{Input, Simulator};
 
+trait Peripheral {
+    fn write(addr: u32, val: u8) { }
+    fn read(addr: u32) -> u8 { 0x00 }
+}
+
 #[derive(Copy, Clone, Debug, Default)]
 pub struct V(u32);
 
@@ -15,8 +20,7 @@ impl From<bool> for V {
 pub struct VVec(u32);
 
 pub struct InputBuilder {
-    n_inputs: u32,
-    global_inputs: BTreeMap<String, u32>,
+    n_inputs: usize,
 }
 
 impl InputBuilder {
@@ -24,7 +28,6 @@ impl InputBuilder {
         InputBuilder {
             // 0 is reserved for hard-wired zero
             n_inputs: 1,
-            global_inputs: BTreeMap::new(),
         }
     }
 
@@ -32,20 +35,11 @@ impl InputBuilder {
         let id = self.n_inputs;
         self.n_inputs += 1;
 
-        (Input(id), V(id))
+        (Input(id as u32), V(id as u32))
     }
 
-    /*pub fn global_input(&mut self, name: &str) {
-        let (Input(id), _) = self.input();
-        self.global_inputs.insert(name.into(), id);
-    }*/
-
     pub fn build(self, f: impl FnOnce() -> ()) -> Simulator {
-        let n_inputs = (self.n_inputs + 63) / 64 * 64;
-
-        let g = crate::v::with_builder(
-            GateBuilder::new(n_inputs, self.global_inputs),
-            f);
+        let g = crate::v::with_builder(GateBuilder::new(self.n_inputs), f);
 
         Simulator::new(
             g.gates
@@ -57,8 +51,7 @@ impl InputBuilder {
                 ))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            n_inputs,
-            g.global_inputs)
+            self.n_inputs)
     }
 }
 
@@ -66,7 +59,6 @@ pub struct GateBuilder {
     vecs: BTreeMap<u32, Vec<V>>,
     values: Vec<Value>,
     gates: Vec<(u32, u32, Option<String>)>,
-    global_inputs: BTreeMap<String, u32>,
 }
 
 enum Value {
@@ -76,16 +68,15 @@ enum Value {
 }
 
 impl GateBuilder {
-    fn new(n_inputs: u32, global_inputs: BTreeMap<String, u32>) -> Self {
+    fn new(n_inputs: usize) -> Self {
         GateBuilder {
             vecs: BTreeMap::new(),
-            values: (0..n_inputs)
-                .map(|id| Value::Gate(id as u32))
+            values: (0..n_inputs as u32)
+                .map(|id| Value::Gate(id))
                 .collect(),
-            gates: (0..n_inputs)
+            gates: (0..n_inputs as u32)
                 .map(|id| (id, id, None))
                 .collect(),
-            global_inputs,
         }
     }
 
@@ -131,10 +122,6 @@ impl GateBuilder {
     pub fn vv_len(&mut self, vv: VVec) -> usize {
         self.vecs.get(&vv.0).unwrap().len()
     }
-
-    /*pub fn global(&mut self, name: &str) -> V {
-        V(*self.global_inputs.get(name).expect("no such global input"))
-    }*/
 
     pub fn nand(&mut self, a: V, b: V) -> V {
         let vid = self.values.len() as u32;

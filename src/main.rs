@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 mod simulator;
 mod builder;
 use builder::InputBuilder;
@@ -83,23 +81,21 @@ fn main() {
     //sim.step_by(1000);
 
     //let (clocks, snaps, steps) = (10, 10, 1);
-    let (clocks, snaps, steps) = (300, 1, 1000);
+    let (clocks, snaps, steps) = (100, 100, 1000);
 
     let mut spi_clk_prev = false;
     let mut spi_buf: u8 = 0;
     let mut spi_bit: usize = 0;
     let mut spi_output: Vec<u8> = Vec::new();
 
-    for _ in 0..clocks {
+    for t in 0..clocks {
         sim.set(clk_i, clock);
         clock = !clock;
 
-        for _ in 0..snaps {
+        if t < snaps {
             sim.snapshot();
-            //let start = SystemTime::now();
-            sim.step_by(steps);
-            //let end = SystemTime::now();
         }
+        sim.step_by(steps);
 
         if !sim.get_named("spi_cs") {
             let spi_clk = sim.get_named("spi_clk");
@@ -119,12 +115,12 @@ fn main() {
         } else {
             spi_bit = 0;
         }
-
-        //println!("{}", end.duration_since(start).unwrap().as_micros());
     }
 
     sim.show();
 
     println!("SPI output: {:?}", spi_output);
     println!("SPI output: {:?}", String::from_utf8(spi_output));
+
+    sim.bench();
 }

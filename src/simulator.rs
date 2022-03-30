@@ -1,12 +1,5 @@
-use std::collections::BTreeMap;
+use std::time::SystemTime;
 use rayon::prelude::*;
-
-#[derive(Debug)]
-struct BitAddr {
-    index: u32,
-    bit: u8,
-    rot: u8,
-}
 
 #[derive(Copy, Clone)]
 pub struct Input(pub u32);
@@ -14,23 +7,13 @@ pub struct Input(pub u32);
 #[derive(Copy, Clone)]
 pub struct Output(pub u32);
 
-fn crot(s: u8, d: u8) -> u8 {
-    if s == d {
-        0
-    } else if s > d {
-        s - d
-    } else {
-        64 + s - d
-    }
-}
-
 fn remove_gate(
     gates: &mut Vec<(u32, u32, Option<String>)>,
-    start: u32,
+    start: usize,
     oid: u32,
     nid: u32)
 {
-    for gate in &mut gates[start as usize..] {
+    for gate in &mut gates[start..] {
         if gate.0 == oid {
             gate.0 = nid;
         } else if gate.0 > oid {
@@ -49,7 +32,7 @@ fn remove_gate(
 
 fn prune_gates(
     gates: &[(u32, u32, Option<String>)],
-    n_inputs: u32) -> Vec<(u32, u32, Option<String>)>
+    n_inputs: usize) -> Vec<(u32, u32, Option<String>)>
 {
     let mut gates = gates.to_vec();
 
@@ -60,7 +43,16 @@ fn prune_gates(
     loop {
         let len_before = gates.len();
 
-        for id in (start..gates.len() as u32).rev() {
+        for cur in &mut gates[start..] {
+            if cur.2.is_none() && (cur.0 == 0 || cur.1 == 0) {
+                // simplify nand(0, a)/nand(a, 0) -> nand(0, 0) which can be combined later
+
+                cur.0 = 0;
+                cur.1 = 0;
+            }
+        }
+
+        for id in (start as u32..gates.len() as u32).rev() {
             let cur = &gates[id as usize];
 
             // don't remove named gates
@@ -68,8 +60,8 @@ fn prune_gates(
                 continue;
             }
 
-            if gates.iter().skip(start as usize).find(|o| o.0 == id || o.1 == id).is_none() {
-                // remove unused gate
+            if gates.iter().skip(start).find(|o| o.0 == id || o.1 == id).is_none() {
+                // remove gate with unused output
 
                 remove_gate(&mut gates, start, id, 0);
                 continue;
@@ -88,7 +80,7 @@ fn prune_gates(
                     )
                     && o.2 == cur.2)
             {
-                // remove identical gate
+                // combine identical gates
 
                 remove_gate(&mut gates, start, id, oid);
                 continue;
@@ -127,98 +119,46 @@ fn prune_gates(
 }
 
 pub struct Simulator {
-    map: Vec<(BitAddr, BitAddr)>,
     cur_out: usize,
-    state: [Vec<u64>; 2],
-    n_inputs: u32,
+    state: [Vec<u8>; 2],
+    n_inputs: usize,
     names: Vec<(u32, String, String)>,
-    global_inputs: BTreeMap<String, u32>,
     max_steps: usize,
-    num_gates: usize,
+    total_steps: usize,
+    gates: Vec<(u32, u32, Option<String>)>,
 }
 
 impl Simulator {
     pub fn new(
         gates: &[(u32, u32, Option<String>)],
-        n_inputs: u32,
-        global_inputs: BTreeMap<String, u32>) -> Simulator
+        n_inputs: usize) -> Simulator
     {
         let gates = prune_gates(gates, n_inputs);
 
-        /*for x in gates.iter().enumerate() {
-            println!("{} <- ({}, {}, {:?})", x.0, x.1.0, x.1.1, x.1.2);
-        }*/
-
-        let state_len = (gates.len() + 63) / 64;
-
-        let mut names = Vec::new();
-
-        let map =
-            (gates
-                .iter()
-                .cloned()
-                .chain((0..(state_len * 64 - gates.len())).map(|_| (0, 0, None)))
-                .enumerate()
-                .map(|(gate, (a, b, name))| {
-                    let (a_index, a_bit) = split(a);
-                    let (b_index, b_bit) = split(b);
-                    let (_, d_bit) = split(gate as u32);
-
-                    if let Some(name) = name {
-                        if !name.is_empty() {
-                            names.push((gate as u32, name.clone(), String::new()));
-                        }
-                    }
-
-                    return (
-                        BitAddr {
-                            index: a_index,
-                            bit: a_bit,
-                            rot: crot(a_bit, d_bit),
-                        },
-                        BitAddr {
-                            index: b_index,
-                            bit: b_bit,
-                            rot: crot(b_bit, d_bit),
-                        },
-                    )
-                }))
-            .collect::<Vec<_>>();
-
-        let mut state = vec![0; state_len];
+        let mut state = vec![0; gates.len()];
 
         Simulator {
-            map,
             cur_out: 0,
             state: [state.clone(), state],
             n_inputs,
-            global_inputs,
-            names,
+            names: gates
+                .iter()
+                .enumerate()
+                .filter_map(|(index, (_, _, n))| n.as_ref().map(|n| (index, n.clone())))
+                .filter(|(_, n)| !n.is_empty())
+                .map(|(index, name)| (index as u32, name, String::new()))
+                .collect(),
             max_steps: 0,
-            num_gates: gates.len(),
+            total_steps: 0,
+            gates,
         }
     }
 
     pub fn set(&mut self, input: Input, val: bool) {
-        let (index, bit) = split(input.0);
-        let mask = !(1u64 << bit);
-        let set = (val as u64) << bit;
-
-        let s = &mut self.state[self.cur_out][index as usize];
-        *s = *s & mask | set;
-
-        let s = &mut self.state[1 - self.cur_out][index as usize];
-        *s = *s & mask | set;
+        let index = input.0 as usize;
+        self.state[self.cur_out][index] = val as u8;
+        self.state[1 - self.cur_out][index] = val as u8;
     }
-
-    /*pub fn set_global(&mut self, name: &str, val: bool) {
-        self.set(Input(*self.global_inputs.get(name).expect("no such global input")), val);
-    }*/
-
-    /*pub fn get(&self, gate: u32) -> bool {
-        let (index, bit) = split(gate);
-        return self.state[self.cur_out][index as usize] & (1 << bit) != 0;
-    }*/
 
     fn step(&mut self) {
         self.cur_out = 1 - self.cur_out;
@@ -230,34 +170,32 @@ impl Simulator {
             (&mut state.0[0], &mut state.1[0])
         };
 
-        let map = self.map.as_slice();
+        let chunk_size = 256;
 
-        state_out
-            .par_iter_mut()
+        (&mut state_out[self.n_inputs..])
+            .par_chunks_mut(chunk_size)
             .enumerate()
-            .skip((self.n_inputs / 64) as usize)
-            .for_each(|(index, out)| {
-                let mut a: u64 = 0;
-                let mut b: u64 = 0;
+            .for_each(|(chunk_index, mut out)| {
+                let offset = chunk_index * chunk_size + self.n_inputs;
 
-                for (am, bm) in &map[index*64..(index+1)*64] {
-                    a |= (state_in[am.index as usize] & ((1u64 << am.bit) as u64)).rotate_right(am.rot.into());
-                    b |= (state_in[bm.index as usize] & ((1u64 << bm.bit) as u64)).rotate_right(bm.rot.into());
+                for (index, out) in out.iter_mut().enumerate() {
+                    let (a, b, _) = self.gates[index + offset];
+                    *out = (state_in[a as usize] & state_in[b as usize]) ^ 0x01;
                 }
-
-                *out = !(a & b);
             });
     }
 
     pub fn step_by(&mut self, steps: usize) {
         let mut i = 0;
         while i < steps {
+            self.total_steps += 1;
+
             i += 1;
 
             self.step();
 
             if self.state[0] == self.state[1] {
-                //println!("settled after {} steps", _i + 1);
+                //println!("settled after {} steps", i + 1);
                 break;
             }
         }
@@ -266,17 +204,15 @@ impl Simulator {
     }
 
     pub fn snapshot(&mut self) {
-        for (gate, _, out) in &mut self.names {
-            let (index, bit) = split(*gate);
-            let v = self.state[self.cur_out][index as usize] & (1 << bit) != 0;
+        for (index, _, out) in &mut self.names {
+            let v = self.state[self.cur_out][*index as usize] != 0;
             out.push(if v { '█' } else { '▁' })
         }
     }
 
     pub fn get_named(&mut self, name: &str) -> bool {
-        let gate = self.names.iter().find(|(_, n, _)| n == name).expect("unknown name").0;
-        let (index, bit) = split(gate);
-        self.state[self.cur_out][index as usize] & (1 << bit) != 0
+        let index = self.names.iter().find(|(_, n, _)| n == name).expect("unknown name").0;
+        self.state[self.cur_out][index as usize] != 0
     }
 
     pub fn show(&self) {
@@ -287,11 +223,20 @@ impl Simulator {
         }
 
         println!("max steps: {}", self.max_steps);
-
-        println!("gates: {}", self.num_gates);
+        println!("gates: {}", self.gates.len());
     }
-}
 
-fn split(gate: u32) -> (u32, u8) {
-    return ((gate / 64) as u32, (gate % 64) as u8);
+    pub fn bench(&mut self) {
+        let steps: u64 = 100_000;
+
+        let start = SystemTime::now();
+        for _ in 0..steps {
+            self.step();
+        }
+        let end = SystemTime::now();
+
+        println!(
+            "steps per second: {}",
+            steps * 1_000_000 / (end.duration_since(start).unwrap().as_micros() as u64));
+    }
 }
