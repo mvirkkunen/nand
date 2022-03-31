@@ -1,19 +1,24 @@
 use std::cell::RefCell;
 use std::ops::Shl;
 
-use crate::builder::GateBuilder;
+use super::simulator::{Input, Output};
+use super::builder::GateBuilder;
 
-pub use crate::builder::{V, VVec};
+pub use super::builder::{V, VVec};
 
 thread_local! {
     static BUILDER: RefCell<Option<GateBuilder>> = Default::default();
 }
 
-pub fn with_builder(builder: GateBuilder, f: impl FnOnce() -> ()) -> GateBuilder {
+pub fn with_builder<R>(builder: GateBuilder, f: impl FnOnce() -> R) -> (R, GateBuilder) {
     BUILDER.with(|gb| {
+        if gb.borrow().is_some() {
+            panic!("nested with_builder");
+        }
+
         *gb.borrow_mut() = Some(builder);
-        f();
-        gb.borrow_mut().take().unwrap()
+        let r = f();
+        (r, gb.borrow_mut().take().unwrap())
     })
 }
 
@@ -30,8 +35,16 @@ impl V {
         self
     }
 
+    pub fn output(self) -> Output {
+        builder(|gb| {
+            let vv = gb.vv_from(vec![self]);
+            gb.output(vv)
+        })
+    }
+
     pub fn pin(self) -> Self {
-        self.name("")
+        builder(|gb| gb.pin(self));
+        self
     }
 }
 
@@ -62,6 +75,10 @@ impl VVec {
         });
 
         self
+    }
+
+    pub fn output(self) -> Output {
+        builder(|gb| gb.output(self))
     }
 }
 
@@ -125,4 +142,8 @@ pub fn one() -> V {
 
 pub fn nand(a: V, b: V) -> V {
     builder(|c| c.nand(a, b))
+}
+
+pub fn input(size: usize) -> (Input, VVec) {
+    builder(|c| c.input(size))
 }

@@ -1,16 +1,9 @@
-mod simulator;
-mod builder;
-use builder::InputBuilder;
-mod v;
-
 mod modules;
-use modules::*;
+
+mod simulator;
+use simulator::*;
 
 fn main() {
-    let mut builder = InputBuilder::new();
-    let (rst_i, rst) = builder.input();
-    let (clk_i, clk) = builder.input();
-    let (miso_i, miso) = builder.input();
 
     let rom_data: Vec<u8> = vec![
         0x12, 0x10, // ldi r2, 0x10
@@ -31,78 +24,103 @@ fn main() {
         0x6c, 0x6f,
     ];
 
-    let mut sim = builder.build(|| {
+    struct Io {
+        rst: Input,
+        clk: Input,
+        spi_miso: Input,
+        spi_mosi: Output,
+        spi_clk: Output,
+        spi_cs: Output,
+    }
+
+    let (io, mut sim) = build_simulator(|| {
+        use crate::simulator::v::*;
+        
+        let (rst_i, rst) = input(1);
+        let (clk_i, clk) = input(1);
+        let (spi_miso_i, spi_miso) = input(1);
+
+        let rst = rst.at(0);
+        let clk = clk.at(0);
+        let spi_miso = spi_miso.at(0);
+
         clk.name("clk");
         rst.name("rst");
 
         let data_bus = vv(8);
 
-        let c = cpu(CpuInputs {
+        let c = modules::cpu(modules::CpuInputs {
             data_bus,
             clk,
             rst,
         });
 
-        let CpuOutputs { data_bus_out, addr_bus, data_write } = c;
+        let modules::CpuOutputs { data_bus_out, addr_bus, data_write } = c;
 
         // Address decoding
 
         let sel_rom = !addr_bus.at(7);
-        let sel_ram = addr_bus.at(7) & !addr_bus.at(6);
+        //let sel_ram = addr_bus.at(7) & !addr_bus.at(6);
         let sel_spi = addr_bus.at(7) & addr_bus.at(6);
 
         // SPI peripheral
 
-        let spi = spi_bus(addr_bus.at(0), data_bus, data_write, sel_spi, clk, miso, !rst);
-        miso.name("spi_miso");
-        spi.mosi.name("spi_mosi");
-        spi.clk.name("spi_clk");
-        spi.cs.name("spi_cs");
+        let spi = modules::spi_bus(addr_bus.at(0), data_bus, data_write, sel_spi, clk, spi_miso, !rst);
+        spi_miso.name("spi_miso");
 
         // Data bus members
 
         data_bus << (
             data_bus_out
-            | rom(8, rom_data.iter().map(|&x| x as u64).collect::<Vec<_>>().as_slice(), addr_bus.slice(0..7), sel_rom)
-            //| ram(4, addr_bus.slice(0..7), data_bus, data_write, sel_ram, clk, !rst)
+            | modules::rom(8, rom_data.iter().map(|&x| x as u64).collect::<Vec<_>>().as_slice(), addr_bus.slice(0..7), sel_rom)
+            //| modules::ram(4, addr_bus.slice(0..7), data_bus, data_write, sel_ram, clk, !rst)
             | spi.data
         );
 
         data_write.name("w");
         data_bus.name("data");
         addr_bus.name("addr");
+
+        Io {
+            rst: rst_i,
+            clk: clk_i,
+            spi_miso: spi_miso_i,
+            spi_mosi: spi.mosi.name("spi_mosi").output(),
+            spi_clk: spi.clk.name("spi_clk").output(),
+            spi_cs: spi.cs.name("spi_cs").output(),
+        }
     });
 
-    let mut clock = false;
+    let mut clock = 0u8;
 
-    sim.set(rst_i, true);
-    sim.step_by(1000);
-    sim.set(rst_i, false);
-    //sim.step_by(1000);
+    sim.set(&io.rst, 1u8);
+    sim.step_until_settled(1000);
+    sim.set(&io.rst, 0u8);
+    sim.step_until_settled(1000);
 
     //let (clocks, snaps, steps) = (10, 10, 1);
-    let (clocks, snaps, steps) = (100, 100, 1000);
+    let (clocks, snaps, steps) = (300, 100, 1000);
 
-    let mut spi_clk_prev = false;
+    let mut spi_clk_prev = 0u8;
     let mut spi_buf: u8 = 0;
     let mut spi_bit: usize = 0;
     let mut spi_output: Vec<u8> = Vec::new();
 
     for t in 0..clocks {
-        sim.set(clk_i, clock);
-        clock = !clock;
+        sim.set(&io.clk, clock);
+        clock = 1 - clock;
 
         if t < snaps {
             sim.snapshot();
         }
-        sim.step_by(steps);
+        sim.step_until_settled(steps);
 
-        if !sim.get_named("spi_cs") {
-            let spi_clk = sim.get_named("spi_clk");
+        if sim.get::<u8>(&io.spi_cs) == 0u8 {
+            let spi_clk: u8 = sim.get(&io.spi_clk);
 
-            if !spi_clk_prev && spi_clk {
+            if spi_clk_prev == 0 && spi_clk == 1 {
                 spi_buf >>= 1;
-                spi_buf |= (sim.get_named("spi_mosi") as u8) << 7;
+                spi_buf |= sim.get::<u8>(&io.spi_mosi) << 7;
                 spi_bit += 1;
 
                 if spi_bit == 8 {
@@ -122,5 +140,5 @@ fn main() {
     println!("SPI output: {:?}", spi_output);
     println!("SPI output: {:?}", String::from_utf8(spi_output));
 
-    sim.bench();
+    //sim.bench();
 }
