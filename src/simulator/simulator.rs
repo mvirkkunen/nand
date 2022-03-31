@@ -204,6 +204,10 @@ impl Simulator {
         println!("gates: {}", self.gates.len());
     }
 
+    pub fn num_gates(&self) -> usize {
+        self.gates.len()
+    }
+
     /*pub fn get_named(&mut self, name: &str) -> bool {
         let index = self.names.iter().find(|(_, n, _)| n == name).expect("unknown name").0;
         self.state[self.cur_out][index as usize] != 0

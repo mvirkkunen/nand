@@ -140,5 +140,5 @@ fn main() {
     println!("SPI output: {:?}", spi_output);
     println!("SPI output: {:?}", String::from_utf8(spi_output));
 
-    //sim.bench();
+    bench(&mut sim);
 }

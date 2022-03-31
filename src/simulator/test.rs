@@ -1,26 +1,16 @@
+use std::time::SystemTime;
+use crate::simulator::Simulator;
 
+pub fn bench(sim: &mut Simulator) {
+    let steps: u64 = 100_000;
 
-    pub fn show(&self) {
-        let pad = self.names.iter().map(|(_, name, _)| name.len()).max().unwrap() + 1;
-
-        for (_, name, out) in &self.names {
-            println!("{name:pad$}{out}", name=name, pad=pad, out=out);
-        }
-
-        println!("max steps: {}", self.max_steps);
-        println!("gates: {}", self.gates.len());
+    let start = SystemTime::now();
+    for _ in 0..steps {
+        sim.step();
     }
+    let end = SystemTime::now();
 
-    pub fn bench(&mut self) {
-        let steps: u64 = 100_000;
-
-        let start = SystemTime::now();
-        for _ in 0..steps {
-            self.step();
-        }
-        let end = SystemTime::now();
-
-        println!(
-            "steps per second: {}",
-            steps * 1_000_000 / (end.duration_since(start).unwrap().as_micros() as u64));
-    }
+    let steps_per_s = steps * 1_000 / (end.duration_since(start).unwrap().as_micros() as u64);
+    println!("steps/s: {}k", steps_per_s);
+    println!("gates/s: {}k", sim.num_gates() as u64 * steps_per_s);
+}
