@@ -3,6 +3,12 @@ pub mod builder;
 pub mod simulator;
 pub use simulator::*;
 
+mod simple_simulator;
+pub use simple_simulator::SimpleSimulator;
+
+mod change_list_simulator;
+pub use change_list_simulator::ChangeListSimulator;
+
 pub mod v;
 
 mod test;
@@ -11,6 +17,6 @@ mod optimizer;
 
 pub use test::bench;
 
-pub fn build_simulator<R>(f: impl FnOnce() -> R) -> (R, Simulator) {
-    builder::GateBuilder::default().build_simulator(f)
+pub fn build_simulator<S: Simulator, R>(f: impl FnOnce() -> R) -> (R, S) {
+    builder::GateBuilder::default().build_simulator::<S, R>(f)
 }

@@ -29,7 +29,7 @@ enum Value {
 }
 
 impl GateBuilder {
-    pub fn build_simulator<R>(self, f: impl FnOnce() -> R) -> (R, Simulator) {
+    pub fn build_simulator<S: Simulator, R>(self, f: impl FnOnce() -> R) -> (R, S) {
         let mut builder = GateBuilder::default();
 
         // reserve constant 0
@@ -39,7 +39,7 @@ impl GateBuilder {
 
         (
             r,
-            Simulator::new(
+            S::new(
                 builder.gates
                     .iter()
                     .map(|g| Gate {

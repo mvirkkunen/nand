@@ -3,6 +3,13 @@ mod modules;
 mod simulator;
 use simulator::*;
 
+type SimType = ChangeListSimulator;
+// clocks/s: 154k
+
+//type SimType = SimpleSimulator;
+// clocks/s: 3k
+
+
 fn main() {
 
     let rom_data: Vec<u8> = vec![
@@ -33,9 +40,9 @@ fn main() {
         spi_cs: Output,
     }
 
-    let (io, mut sim) = build_simulator(|| {
+    let (io, mut sim): (_, SimType) = build_simulator(|| {
         use crate::simulator::v::*;
-        
+
         let (rst_i, rst) = input(1);
         let (clk_i, clk) = input(1);
         let (spi_miso_i, spi_miso) = input(1);
@@ -98,7 +105,7 @@ fn main() {
     sim.set(&io.rst, 0u8);
     sim.step_until_settled(1000);
 
-    //let (clocks, snaps, steps) = (10, 10, 1);
+    //let (clocks, snaps, steps) = (80, 80, 1);
     let (clocks, snaps, steps) = (300, 100, 1000);
 
     let mut spi_clk_prev = 0u8;
@@ -113,7 +120,8 @@ fn main() {
         if t < snaps {
             sim.snapshot();
         }
-        sim.step_until_settled(steps);
+
+        sim.step_by(128);
 
         if sim.get::<u8>(&io.spi_cs) == 0u8 {
             let spi_clk: u8 = sim.get(&io.spi_clk);
@@ -140,5 +148,5 @@ fn main() {
     println!("SPI output: {:?}", spi_output);
     println!("SPI output: {:?}", String::from_utf8(spi_output));
 
-    bench(&mut sim);
+    bench(&mut sim, io.clk);
 }

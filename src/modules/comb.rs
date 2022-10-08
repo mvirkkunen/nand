@@ -89,6 +89,10 @@ impl VVec {
     }
 
     fn combine(self, f: fn(V, V) -> V) -> V {
+        if self.len() == 0 {
+            return zero();
+        }
+
         fn combine(vec: &[V], f: fn(V, V) -> V) -> V {
             if vec.len() == 1 {
                 vec[0]
