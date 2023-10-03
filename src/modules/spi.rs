@@ -14,6 +14,8 @@ pub struct SpiBus {
 pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> SpiBus {
     let bit = vv(3);
 
+    // address decoding
+
     let write_buf = sel & w & !addr;
     let write_status = sel & w & addr;
 
@@ -23,6 +25,7 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
     let end = !write_status & !bit.orv();
 
     // status register
+    // bit 0 = write 1 to start transaction, write returns to 0 when complete
 
     let status = latch_cond(
         [
@@ -34,7 +37,8 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
 
     let busy = status.at(0);
 
-    // buffer register
+    // data register
+    // not latched; shifts while transaction in progress
 
     let buf = vv(8);
     buf << latch_cond(
@@ -46,6 +50,7 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
         rstn);
 
     // bit counter
+    // counts up from 1 until overflow to 0, transaction ends when reaches 0
 
     bit << latch_cond(
         [

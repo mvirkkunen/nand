@@ -15,8 +15,8 @@ pub fn optimize_gates(gates: &mut Vec<Gate>) {
                 cur.b = 0;
             }
         }
-        
-        // see if there isa hardwired 1 gate which is NOT 0
+
+        // see if there is a hardwired 1 gate which is NOT 0
         // eventually there should only be one left
 
         if let Some(Gate { id, .. }) = gates
