@@ -20,3 +20,11 @@ pub use test::bench;
 pub fn build_simulator<S: Simulator, R>(f: impl FnOnce() -> R) -> (R, S) {
     builder::GateBuilder::default().build_simulator::<S, R>(f)
 }
+
+pub fn build_combinatorial_test<R>(f: impl FnOnce() -> R) -> (R, ChangeListSimulator) {
+    let (r, mut sim) = builder::GateBuilder::default().build_simulator::<ChangeListSimulator, _>(f);
+
+    sim.step_until_settled(10_000);
+
+    (r, sim)
+}
