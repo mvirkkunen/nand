@@ -28,7 +28,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
 
     // instruction holding register
 
-    let ins = latch_cond(
+    let ins = flip_flop_cond(
         [
             (step.at(0), data_bus),
         ],
@@ -72,7 +72,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
     let regs: Vec<VVec> = x_sel
         .iter()
         .map(|sel| {
-            latch_cond(
+            flip_flop_cond(
                 [
                     (sel & result_to_x, result),
                     (sel & data_to_x, data_bus),
@@ -99,7 +99,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
     // program counter
 
     let pc = vv(8);
-    pc << latch_cond(
+    pc << flip_flop_cond(
         [
             (result_to_pc, result),
             (increment_pc, increment(pc)),
@@ -109,7 +109,7 @@ pub fn cpu(inp: CpuInputs) -> CpuOutputs {
 
     // incrementing instruction step index
 
-    step_index << latch_cond(
+    step_index << flip_flop_cond(
         [
             (step_next, zero() * 2),
             (one(), increment(step_index)),

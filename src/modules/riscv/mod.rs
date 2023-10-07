@@ -1,7 +1,7 @@
 use super::*;
 
 mod alu;
-mod mem;
+mod mem_accessor;
 
 pub struct CpuInputs {
     pub data_bus: VVec,

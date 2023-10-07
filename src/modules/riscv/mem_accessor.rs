@@ -9,9 +9,9 @@ pub struct MemInputs {
     unsigned: V,
     write: V,
     start: V,
-    req_b: V,
-    req_h: V,
-    req_w: V,
+    size_b: V,
+    size_h: V,
+    size_w: V,
 }
 
 pub struct MemOutputs {
@@ -37,11 +37,11 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
 
     // 1 if value crosses 32 bit boundary
     let crosses =
-        (inp.req_h & addr_low.eq_constant(0b11))
-        | (inp.req_w & !addr_low.eq_constant(0b00));
+        (inp.size_h & addr_low.eq_constant(0b11))
+        | (inp.size_w & !addr_low.eq_constant(0b00));
 
     // 1 if doing an aligned word write and can skip read phase completely
-    let aligned_word_write = inp.write & inp.req_w & addr_low.eq_constant(0b00);
+    let aligned_word_write = inp.write & inp.size_w & addr_low.eq_constant(0b00);
     
     // state machine for multi-step accesses
     let step = vv(3);
@@ -52,7 +52,7 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
     let step_w0 = step.eq_constant(STEP_W0).name("step_w0");
     let step_w1 = step.eq_constant(STEP_W1).name("step_w1");
 
-    step << latch_cond([
+    step << flip_flop_cond([
         (step_start & aligned_word_write, constant(3, STEP_W0)),
         (step_start, constant(3, STEP_R0)),
 
@@ -71,22 +71,22 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
 
     // holding buffer for data read from memory
     let buf = vv(32 * 2);
-    buf << latch_cond([
+    buf << flip_flop_cond([
         (step_start, inp.data_bus + buf.slice(32..)),
         (step_r0, buf.slice(..32) + inp.data_bus),
     ], inp.clk, inp.nrst);
 
     // copy of holding buffer deposited with input value
-    let val_deposited = [(inp.req_b, 8), (inp.req_h, 16), (inp.req_w, 32)]
+    let val_deposited = [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
         .into_iter()
-        .flat_map(|(req, size)| {
+        .flat_map(|(in_size, bits)| {
             (0..4).map(move |offs| {
-                req
+                in_size
                     & addr_low.eq_constant(offs as u64)
                     & (
                         buf.slice(..offs * 8)
-                        + inp.val.slice(..size)
-                        + buf.slice(offs * 8 + size..)
+                        + inp.val.slice(..bits)
+                        + buf.slice(offs * 8 + bits..)
                     )
                 })
         })
@@ -116,18 +116,18 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
     ].orm();
 
     // value to return extracted from holding buffer
-    let val_extracted = latch(
-        [(inp.req_b, 8), (inp.req_h, 16), (inp.req_w, 32)]
+    let val_extracted = flip_flop(
+        [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
             .into_iter()
-            .flat_map(|(req, size)| {
+            .flat_map(|(in_size, bits)| {
                 (0..4).map(move |offs| {
                     // sign or zero extend value to 32 bits
-                    let short_val = buf.slice(offs*8..offs*8 + size);
-                    let ext_bit = cond(inp.unsigned, zero(), short_val.at(size - 1));
+                    let short_val = buf.slice(offs*8..offs*8 + bits);
+                    let ext_bit = cond(inp.unsigned, zero(), short_val.at(bits - 1));
 
-                    req
+                    in_size
                         & addr_low.eq_constant(offs as u64)
-                        & (short_val + ext_bit * (32 - size))
+                        & (short_val + ext_bit * (32 - bits))
                 })
             })
             .orm(),
@@ -162,9 +162,9 @@ mod test {
             unsigned: Input,
             write: Input,
             start: Input,
-            req_b: Input,
-            req_h: Input,
-            req_w: Input,
+            size_b: Input,
+            size_h: Input,
+            size_w: Input,
         }
         
         pub struct Outputs {
@@ -185,9 +185,9 @@ mod test {
             let (unsigned_i, unsigned) = input_bit();
             let (write_i, write) = input_bit();
             let (start_i, start) = input_bit();
-            let (req_b_i, req_b) = input_bit();
-            let (req_h_i, req_h) = input_bit();
-            let (req_w_i, req_w) = input_bit();
+            let (size_b_i, size_b) = input_bit();
+            let (size_h_i, size_h) = input_bit();
+            let (size_w_i, size_w) = input_bit();
 
             nrst.name("nrst");
             clk.name("clk");
@@ -215,9 +215,9 @@ mod test {
                 unsigned,
                 write,
                 start,
-                req_b,
-                req_h,
-                req_w,
+                size_b,
+                size_h,
+                size_w,
             });
 
             addr_bus << (in_addr_bus | acc_out.addr_bus).name("bus_addr");
@@ -238,9 +238,9 @@ mod test {
                     unsigned: unsigned_i,
                     write: write_i,
                     start: start_i,
-                    req_b: req_b_i,
-                    req_h: req_h_i,
-                    req_w: req_w_i,
+                    size_b: size_b_i,
+                    size_h: size_h_i,
+                    size_w: size_w_i,
                 },
                 Outputs {
                     //addr_bus: acc.addr_bus.output(),
@@ -262,10 +262,11 @@ mod test {
         }
 
         for addr in 0..8 {
-            for val in [0x11223399u64, 0xbadf00d5u64] {
-                for (write, unsigned) in [(false, false), (false, true), (true, false)] {
-                    for (size, req) in [(1, &inp.req_b), (2, &inp.req_h), (4, &inp.req_w)] {
-                        println!("addr={addr} val={val:08x} write={write} unsigned={unsigned} size={size}");
+            for (write, unsigned) in [(false, false), (false, true), (true, false)] {
+                let vals = if write { [0x11223399u64, 0xbadf00d5u64].as_slice() } else { &[0u64] };
+                for val in vals.iter().copied() {
+                    for (bytes, in_size) in [(1, &inp.size_b), (2, &inp.size_h), (4, &inp.size_w)] {
+                        println!("addr={addr} val={val:08x} write={write} unsigned={unsigned} bytes={bytes}");
 
                         // reset simulator
 
@@ -286,10 +287,10 @@ mod test {
                         sim.set(&inp.val, val);
                         sim.set(&inp.unsigned, unsigned);
                         sim.set(&inp.write, write);
-                        sim.set(&inp.req_b, false);
-                        sim.set(&inp.req_h, false);
-                        sim.set(&inp.req_w, false);
-                        sim.set(req, true);
+                        sim.set(&inp.size_b, false);
+                        sim.set(&inp.size_h, false);
+                        sim.set(&inp.size_w, false);
+                        sim.set(in_size, true);
                         sim.set(&inp.start, false);
 
                         // initialize ram with default data
@@ -332,7 +333,7 @@ mod test {
                             let mut expected = mem;
 
                             // deposit value into expected location in memory
-                            expected[addr..addr + size].copy_from_slice(&val.to_le_bytes()[..size]);
+                            expected[addr..addr + bytes].copy_from_slice(&val.to_le_bytes()[..bytes]);
 
                             // read data back from ram
                             let mut result: [u8; 16] = [0; 16];
@@ -352,7 +353,7 @@ mod test {
                         } else {
                             let result = sim.get::<u32>(&out.val);
 
-                            let expected = match (size, unsigned) {
+                            let expected = match (bytes, unsigned) {
                                 (1, false) => (mem[addr] as i8) as u32,
                                 (1, true) => mem[addr] as u32,
                                 (2, false) => i16::from_le_bytes(mem[addr..addr+2].try_into().unwrap()) as u32,

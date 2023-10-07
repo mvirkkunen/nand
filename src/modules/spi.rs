@@ -27,7 +27,7 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
     // status register
     // bit 0 = write 1 to start transaction, write returns to 0 when complete
 
-    let status = latch_cond(
+    let status = flip_flop_cond(
         [
             (write_status, data),
             (end, constant(8, 0)),
@@ -41,7 +41,7 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
     // not latched; shifts while transaction in progress
 
     let buf = vv(8);
-    buf << latch_cond(
+    buf << flip_flop_cond(
         [
             (write_buf, data),
             (busy, (buf.slice(1..8) + miso)),
@@ -52,7 +52,7 @@ pub fn spi_bus(addr: V, data: VVec, sel: V, w: V, clk: V, miso: V, rstn: V) -> S
     // bit counter
     // counts up from 1 until overflow to 0, transaction ends when reaches 0
 
-    bit << latch_cond(
+    bit << flip_flop_cond(
         [
             (start, constant(3, 1)),
             (busy, increment(bit)),

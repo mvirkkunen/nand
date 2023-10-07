@@ -47,7 +47,7 @@ pub fn ram(size: usize, addr: VVec, data: VVec, w: V, bus_sel: V, clk: V, rstn: 
         .take(size)
         .map(|(row_sel, col_sel)| {
             let sel = row_sel & col_sel;
-            latch(data, bus_sel & w & sel, clk, rstn) & sel
+            flip_flop(data, bus_sel & w & sel, clk, rstn) & sel
         })
         .orm() & !w & bus_sel
 
@@ -60,14 +60,14 @@ pub fn ram(size: usize, addr: VVec, data: VVec, w: V, bus_sel: V, clk: V, rstn: 
         .orm() & bus_sel*/
 }
 
-pub fn latch(data: VVec, e: V, clk: V, rstn: V) -> VVec {
-    data.iter().map(|d| d_flipflop(d, e & rising_edge(clk), rstn).q).collect()
+pub fn flip_flop(data: VVec, e: V, clk: V, rstn: V) -> VVec {
+    data.iter().map(|d| d_latch(d, e & rising_edge(clk), rstn).q).collect()
 }
 
-pub fn latch_cond(cond: impl AsRef<[(V, VVec)]>, clk: V, rstn: V) -> VVec {
+pub fn flip_flop_cond(cond: impl AsRef<[(V, VVec)]>, clk: V, rstn: V) -> VVec {
     let cond = cond.as_ref();
 
-    latch(
+    flip_flop(
         cond
             .iter()
             .scan(
