@@ -1,8 +1,6 @@
 use std::mem::swap;
 use std::collections::BTreeMap;
 
-use rayon::prelude::*;
-
 use crate::simulator::*;
 
 pub struct ChangeListSimulator {
@@ -12,7 +10,6 @@ pub struct ChangeListSimulator {
     names: Vec<(usize, String, String)>,
     input_map: BTreeMap<u32, usize>,
     output_map: BTreeMap<u32, usize>,
-    n_inputs: usize,
     gates: Vec<(u32, u32, Vec<u32>)>,
 }
 
@@ -33,10 +30,17 @@ impl Simulator for ChangeListSimulator {
             .map(|(index, g)| (g.id, index as u32))
             .collect();
 
-        let n_inputs = gates
+        let mut names: Vec<_> = gates
             .iter()
-            .take_while(|g| g.is_input())
-            .count();
+            .flat_map(|g|
+                g.meta()
+                    .cloned()
+                    .into_iter()
+                    .flat_map(|m| m.names.into_iter().map(|n| (g.id, n.clone()))))
+            .map(|(id, name)| (*index_map.get(&id).unwrap() as usize, name, String::new()))
+            .collect();
+    
+        names.sort_by(|a, b| a.1.cmp(&b.1));
 
         ChangeListSimulator {
             state: vec![0; gates.len()],
@@ -46,14 +50,7 @@ impl Simulator for ChangeListSimulator {
                 .map(|g| *index_map.get(&g.id).unwrap())
                 .collect(),
             new_change_list: vec![],
-            names: gates
-                .iter()
-                .filter_map(|g|
-                    g.meta()
-                        .and_then(|m| m.name.as_ref())
-                        .map(|n| (g.id, n.clone())))
-                .map(|(id, name)| (*index_map.get(&id).unwrap() as usize, name, String::new()))
-                .collect(),
+            names,
             input_map: gates
                 .iter()
                 .filter_map(|g|
@@ -68,7 +65,6 @@ impl Simulator for ChangeListSimulator {
                         .and_then(|m| m.output_id)
                         .map(|ioid| (ioid, *index_map.get(&g.id).unwrap() as usize)))
                 .collect(),
-            n_inputs,
             gates: gates
                 .iter()
                 .map(|g| (
@@ -153,6 +149,11 @@ impl Simulator for ChangeListSimulator {
     }
 
     fn show(&self) {
+        if self.names.is_empty() {
+            println!("(no named gates)");
+            return;
+        }
+
         let pad = self.names.iter().map(|(_, name, _)| name.len()).max().unwrap() + 1;
 
         for (_, name, out) in &self.names {
@@ -161,6 +162,12 @@ impl Simulator for ChangeListSimulator {
 
         //println!("max steps: {}", self.max_steps);
         println!("gates: {}", self.gates.len());
+    }
+
+    fn clear(&mut self) {
+        for (_, _, out) in &mut self.names {
+            out.clear();
+        }
     }
 
     fn num_gates(&self) -> usize {

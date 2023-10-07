@@ -163,7 +163,7 @@ impl GateBuilder {
 
     pub fn name(&mut self, v: V, name: &str) {
         let gid = self.resolve_ref(v.0);
-        self.gates[gid as usize].add_meta().name = Some(name.to_owned());
+        self.gates[gid as usize].add_meta().names.push(name.to_owned());
     }
 
     pub fn pin(&mut self, v: V) {

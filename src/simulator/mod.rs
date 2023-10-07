@@ -21,6 +21,7 @@ pub fn build_simulator<S: Simulator, R>(f: impl FnOnce() -> R) -> (R, S) {
     builder::GateBuilder::default().build_simulator::<S, R>(f)
 }
 
+#[cfg(test)]
 pub fn build_combinatorial_test<R>(f: impl FnOnce() -> R) -> (R, ChangeListSimulator) {
     let (r, mut sim) = builder::GateBuilder::default().build_simulator::<ChangeListSimulator, _>(f);
 

@@ -5,13 +5,13 @@ pub struct Flipflop {
     pub qn: V,
 }
 
-/*pub fn sr_flipflop(s: V, r: V) -> Flipflop {
+pub fn sr_flipflop(s: V, r: V) -> Flipflop {
     let qn = v();
     let q = nand(!s, qn);
     qn << nand(!r, q);
 
     Flipflop { q, qn }
-}*/
+}
 
 pub fn d_flipflop(d: V, e: V, rstn: V) -> Flipflop {
     let sn = nand(d, e);

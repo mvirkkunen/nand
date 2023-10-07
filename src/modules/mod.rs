@@ -19,4 +19,6 @@ pub use spi::*;
 mod cpu;
 pub use cpu::*;
 
+pub mod riscv;
+
 pub use crate::simulator::v::*;

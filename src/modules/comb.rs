@@ -76,8 +76,8 @@ impl VVec {
         self.combine(|a, b| a | b)
     }
 
-    pub fn slice(self, r: Range<usize>) -> VVec {
-        self.iter().skip(r.start).take(r.end - r.start).vv()
+    pub fn slice(self, r: impl std::slice::SliceIndex<[V], Output=[V]>) -> VVec {
+        self.as_vec()[r].to_vec().vv()
     }
 
     pub fn zipmap(self, other: VVec, mut f: impl FnMut(V, V) -> V) -> VVec {
@@ -198,4 +198,9 @@ impl<T> VVecMatrix for T where T: IntoIterator<Item=VVec> {
                 .vv()
         }
     }
+}
+
+pub fn cond<T>(condition: V, if_one: T, if_zero: T) -> T
+where V: BitAnd<T, Output=T>, T: BitOr<Output=T> {
+    (condition & if_one) | (!condition & if_zero)
 }

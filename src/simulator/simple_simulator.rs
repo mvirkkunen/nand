@@ -1,4 +1,3 @@
-use std::cmp::{min, max};
 use std::collections::BTreeMap;
 
 use rayon::prelude::*;
@@ -37,20 +36,25 @@ impl Simulator for SimpleSimulator {
             .take_while(|g| g.is_input())
             .count();
 
+        let mut names: Vec<_> = gates
+            .iter()
+            .flat_map(|g|
+                g.meta()
+                    .cloned()
+                    .into_iter()
+                    .flat_map(|m| m.names.into_iter().map(|n| (g.id, n.clone()))))
+            .map(|(id, name)| (*index_map.get(&id).unwrap() as usize, name, String::new()))
+            .collect();
+    
+        names.sort_by(|a, b| a.1.cmp(&b.1));
+
         SimpleSimulator {
             cur_out: 0,
             state: [
                 vec![0; gates.len()],
                 vec![0; gates.len()]
             ],
-            names: gates
-                .iter()
-                .filter_map(|g|
-                    g.meta()
-                        .and_then(|m| m.name.as_ref())
-                        .map(|n| (g.id, n.clone())))
-                .map(|(id, name)| (*index_map.get(&id).unwrap() as usize, name, String::new()))
-                .collect(),
+            names,
             input_map: gates
                 .iter()
                 .filter_map(|g|
@@ -160,6 +164,13 @@ impl Simulator for SimpleSimulator {
         //println!("max steps: {}", self.max_steps);
         println!("gates: {}", self.gates.len());
     }
+
+    fn clear(&mut self) {
+        for (_, _, out) in &mut self.names {
+            out.clear();
+        }
+    }
+
 
     fn num_gates(&self) -> usize {
         self.gates.len()

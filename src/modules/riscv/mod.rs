@@ -1,3 +1,8 @@
+use super::*;
+
+mod alu;
+mod mem;
+
 pub struct CpuInputs {
     pub data_bus: VVec,
     pub clk: V,
@@ -13,7 +18,7 @@ pub struct CpuOutputs {
 pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
     let CpuInputs { data_bus, clk, rst } = inp;
 
-    //assert!(inp.data_bus.len() == 32);
+    assert!(inp.data_bus.len() == 32);
 
     let ins = vv(32);
 
@@ -31,13 +36,19 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
     let shamt = rs2_index;
 
     // Immediates
-    let imm_i = ins.slice(20..=31); // 12 bits
-    let imm_s = ins.slice(7..=11) + ins.slice(25..=31); // 12 bits
-    let imm_sb = zero() + ins.slice(8..=11) + ins.slice(25..=30) + ins.at(7) + ins.at(31); // 12 bits (lowest bit zero)
-    let imm_u = (zero() * 12) + ins.slice(7..=31); // 32 bits (lower 12 bits zero)
-    let imm_uj = zero() + ins.slice(21..=30) + ins.at(20) + ins.slice(12..=19) + ins.at(31); // 21 bits (lowest bit zero)
+    let imm_i = ins.slice(20..=30) + (ins.at(31) * 21);
+    let imm_s = ins.slice(7..=11) + ins.slice(25..=30) + (ins.at(31) * 21);
+    let imm_b = zero() + ins.slice(8..=11) + ins.slice(25..=30) + ins.at(7) + (ins.at(31) * 20);
+    let imm_u = (zero() * 12) + ins.slice(7..=31);
+    let imm_j = zero() + ins.slice(21..=30) + ins.at(20) + ins.slice(12..=19) + (ins.at(31) * 12);
 
-    let x_sel = decoder(x_index);
+    assert!(imm_i.len() == 32);
+    assert!(imm_s.len() == 32);
+    assert!(imm_b.len() == 32);
+    assert!(imm_u.len() == 32);
+    assert!(imm_j.len() == 32);
+
+    /*let x_sel = decoder(x_index);
 
     let regs: Vec<VVec> = decoder(rd_index)
         .iter()
@@ -50,9 +61,11 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
                 clk,
                 rstn)
         })
-        .collect();
+        .collect();*/
 
     let rstn = !rst;
 
     let addr_bus = vv(32);
+
+    unreachable!();
 }

@@ -71,7 +71,7 @@ impl VVec {
             s
                 .iter()
                 .enumerate()
-                .for_each(|(index, v)| { gb.name(*v, &format!("{} {}", name, index)); });
+                .for_each(|(index, v)| { gb.name(*v, &format!("{} {:2x}", name, index)); });
         });
 
         self
@@ -146,4 +146,10 @@ pub fn nand(a: V, b: V) -> V {
 
 pub fn input(size: usize) -> (Input, VVec) {
     builder(|c| c.input(size))
+}
+
+pub fn input_bit() -> (Input, V) {
+    let (input, vvec) = builder(|c| c.input(1));
+
+    (input, vvec.at(0))
 }

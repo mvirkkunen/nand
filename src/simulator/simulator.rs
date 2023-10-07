@@ -23,23 +23,23 @@ impl Gate {
         self.meta().map(|m| m.input_id.is_some()).unwrap_or(false)
     }
 
-    pub fn is_output(&self) -> bool {
+    /*pub fn is_output(&self) -> bool {
         self.meta().map(|m| m.output_id.is_some()).unwrap_or(false)
-    }
+    }*/
 
     pub fn is_io(&self) -> bool {
         self.meta().map(|m| m.input_id.is_some() || m.output_id.is_some()).unwrap_or(false)
     }
 
     pub fn is_pinned(&self) -> bool {
-        self.meta().map(|m| m.pinned).unwrap_or(false)
+        self.meta().map(|m| m.output_id.is_some() || m.input_id.is_some() || m.pinned || !m.names.is_empty()).unwrap_or(false)
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct GateMeta {
     pub pinned: bool,
-    pub name: Option<String>,
+    pub names: Vec<String>,
     pub input_id: Option<u32>,
     pub output_id: Option<u32>,
 }
@@ -68,6 +68,8 @@ pub trait Simulator {
     fn snapshot(&mut self);
 
     fn show(&self);
+
+    fn clear(&mut self);
 
     fn num_gates(&self) -> usize;
 }
