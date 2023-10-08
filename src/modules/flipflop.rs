@@ -28,8 +28,6 @@ pub fn rising_edge(a: V) -> V {
     let b = (!a).pin();
     let b = (!b).pin();
     let b = (!b).pin();
-    let b = (!b).pin();
-    let b = (!b).pin();
     a & b
 }
 

@@ -44,7 +44,7 @@ pub fn optimize_gates(gates: &mut Vec<Gate>) {
         for index in (0..gates.len()).rev() {
             let cur = &gates[index];
 
-            if cur.is_pinned() {
+            if cur.is_io() {
                 // don't remove IO gates
                 continue;
             }

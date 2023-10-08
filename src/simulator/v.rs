@@ -10,6 +10,13 @@ thread_local! {
     static BUILDER: RefCell<Option<GateBuilder>> = Default::default();
 }
 
+#[macro_export]
+macro_rules! vname {
+    ($v:expr) => {
+        $v.name(stringify!($v))
+    }
+}
+
 pub fn with_builder<R>(builder: GateBuilder, f: impl FnOnce() -> R) -> (R, GateBuilder) {
     BUILDER.with(|gb| {
         if gb.borrow().is_some() {

@@ -1,3 +1,5 @@
 /target
 notes.txt
 scratch.txt
+*.o
+*.bin

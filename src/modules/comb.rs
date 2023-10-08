@@ -82,7 +82,7 @@ impl VVec {
 
     pub fn zipmap(self, other: VVec, mut f: impl FnMut(V, V) -> V) -> VVec {
         if self.len() != other.len() {
-            panic!("V size mismatch");
+            panic!("V size mismatch (self={} other={})", self.len(), other.len());
         }
 
         self.iter().zip(other.iter()).map(|(a, b)| f(a, b)).vv()
@@ -200,7 +200,22 @@ impl<T> VVecMatrix for T where T: IntoIterator<Item=VVec> {
     }
 }
 
-pub fn cond<T>(condition: V, if_one: T, if_zero: T) -> T
+pub fn if_else<T>(condition: V, if_one: T, if_zero: T) -> T
 where V: BitAnd<T, Output=T>, T: BitOr<Output=T> {
     (condition & if_one) | (!condition & if_zero)
+}
+
+pub fn cond(conds: impl AsRef<[(V, VVec)]>, default: VVec) -> VVec {
+    conds
+        .as_ref()
+        .iter()
+        .chain(once(&(one(), default)))
+        .scan(
+            zero(),
+            |prev, &(cond, then)| {
+                let result = !*prev & cond & then;
+                *prev = *prev | cond;
+                Some(result)
+            })
+        .orm()
 }

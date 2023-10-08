@@ -22,18 +22,14 @@ pub struct MemOutputs {
     pub busy: V,
 }
 
-const STEP_READY: u64 = 0b000;
-const STEP_R0: u64 = 0b001;
-const STEP_R1: u64 = 0b010;
-const STEP_W0: u64 = 0b011;
-const STEP_W1: u64 = 0b100;
+const STATE_IDLE: u64 = 0b000;
+const STATE_R0: u64 = 0b001;
+const STATE_R1: u64 = 0b010;
+const STATE_W0: u64 = 0b011;
+const STATE_W1: u64 = 0b100;
 
-/// Memory accessor to handle smaller-than-word and unaligned memory read and writes
-pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
-    // calculate low bits of address, and aligned and next aligned memory location
+fn next_state(prev_state: VVec, inp: &MemInputs) -> VVec {
     let addr_low = inp.addr.slice(..2);
-    let addr_0 = inp.addr.slice(2..); //.name("addr_0");
-    let addr_1 = increment(inp.addr.slice(2..)); //.name("addr_1");
 
     // 1 if value crosses 32 bit boundary
     let crosses =
@@ -42,39 +38,49 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
 
     // 1 if doing an aligned word write and can skip read phase completely
     let aligned_word_write = inp.write & inp.size_w & addr_low.eq_constant(0b00);
+
+    cond([
+        (prev_state.eq_constant(STATE_IDLE) & inp.start & aligned_word_write, constant(3, STATE_W0)),
+        (prev_state.eq_constant(STATE_IDLE) & inp.start, constant(3, STATE_R0)),
+
+        (prev_state.eq_constant(STATE_R0) & crosses, constant(3, STATE_R1)),
+        (prev_state.eq_constant(STATE_R0) & inp.write, constant(3, STATE_W0)),
+
+        (prev_state.eq_constant(STATE_R1) & inp.write, constant(3, STATE_W0)),
+
+        (prev_state.eq_constant(STATE_W0) & crosses, constant(3, STATE_W1)),
+    ], constant(3, STATE_IDLE))
+}
+
+/// Memory accessor to handle smaller-than-word and unaligned memory read and writes
+pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
+    // calculate low bits of address, and aligned and next aligned memory location
+    let addr_low = inp.addr.slice(..2);
+    let addr_0 = inp.addr.slice(2..); //.name("addr_0");
+    let addr_1 = increment(inp.addr.slice(2..)); //.name("addr_1");
     
     // state machine for multi-step accesses
-    let step = vv(3);
-    let step_ready = step.eq_constant(STEP_READY).name("step_ready");
-    let step_start = (inp.start & step_ready).name("step_start");
-    let step_r0 = step.eq_constant(STEP_R0).name("step_r0");
-    let step_r1 = step.eq_constant(STEP_R1).name("step_r1");
-    let step_w0 = step.eq_constant(STEP_W0).name("step_w0");
-    let step_w1 = step.eq_constant(STEP_W1).name("step_w1");
+    let prev_state = vv(3);
 
-    step << flip_flop_cond([
-        (step_start & aligned_word_write, constant(3, STEP_W0)),
-        (step_start, constant(3, STEP_R0)),
+    let state = next_state(prev_state, &inp);
 
-        (step_r0 & crosses, constant(3, STEP_R1)),
-        (step_r0 & inp.write, constant(3, STEP_W0)),
-        (step_r0, constant(3, STEP_READY)),
+    let state_idle = state.eq_constant(STATE_IDLE).name("state_idle");
+    let state_r0 = state.eq_constant(STATE_R0).name("state_r0");
+    let state_r1 = state.eq_constant(STATE_R1).name("state_r1");
+    let state_w0 = state.eq_constant(STATE_W0).name("state_w0");
+    let state_w1 = state.eq_constant(STATE_W1).name("state_w1");
 
-        (step_r1 & inp.write, constant(3, STEP_W0)),
-        (step_r1, constant(3, STEP_READY)),
+    prev_state << flip_flop(state, one(), inp.clk, inp.rstn);
 
-        (step_w0 & crosses, constant(3, STEP_W1)),
-        (step_w0, constant(3, STEP_READY)),
+    // 64 bit holding buffer for values read from memory
+    let prev_buf = vv(32 * 2);
 
-        (step_w1, constant(3, STEP_READY)),
-    ], inp.clk, inp.rstn);
+    let buf = cond([
+        (state_r0, inp.data_bus + prev_buf.slice(32..)),
+        (state_r1, prev_buf.slice(..32) + inp.data_bus),
+    ], prev_buf);
 
-    // holding buffer for data read from memory
-    let buf = vv(32 * 2);
-    buf << flip_flop_cond([
-        (step_start, inp.data_bus + buf.slice(32..)),
-        (step_r0, buf.slice(..32) + inp.data_bus),
-    ], inp.clk, inp.rstn);
+    prev_buf << flip_flop(buf, state_r0 | state_r1, inp.clk, inp.rstn);
 
     // copy of holding buffer deposited with input value
     let val_deposited = [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
@@ -92,55 +98,41 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
         })
         .orm();
 
-    let read0 = step_start & !aligned_word_write;
-
-    let read1 = (step_r0 | step_w0) & crosses;
-
-    let write0 = inp.write & (
-        (step_start & aligned_word_write)
-            | (step_r0 & !crosses)
-            | step_r1);
-
-    let write1 = inp.write & step_w0 & crosses;
-
     // value to write to address bus
     let addr_bus_out = [
-        (read0 | write0) & addr_0,
-        (read1 | write1) & addr_1,
+        (state_r0 | state_w0) & addr_0,
+        (state_r1 | state_w1) & addr_1,
     ].orm();
 
     // value to write to data bus
     let data_bus_out = [
-        write0 & val_deposited.slice(..32),
-        write1 & val_deposited.slice(32..),
+        state_w0 & val_deposited.slice(..32),
+        state_w1 & val_deposited.slice(32..),
     ].orm();
 
     // value to return extracted from holding buffer
-    let val_extracted = flip_flop(
-        [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
-            .into_iter()
-            .flat_map(|(in_size, bits)| {
-                (0..4).map(move |offs| {
-                    // sign or zero extend value to 32 bits
-                    let short_val = buf.slice(offs*8..offs*8 + bits);
-                    let ext_bit = if_else(inp.unsigned, zero(), short_val.at(bits - 1));
+    let val_extracted = [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
+        .into_iter()
+        .flat_map(|(in_size, bits)| {
+            (0..4).map(move |offs| {
+                // sign or zero extend value to 32 bits
+                let short_val = buf.slice(offs*8..offs*8 + bits);
+                let ext_bit = if_else(inp.unsigned, zero(), short_val.at(bits - 1));
 
-                    in_size
-                        & addr_low.eq_constant(offs as u64)
-                        & (short_val + ext_bit * (32 - bits))
-                })
+                in_size
+                    & addr_low.eq_constant(offs as u64)
+                    & (short_val + ext_bit * (32 - bits))
             })
-            .orm(),
-        one(),
-        !inp.write & step_ready,
-        inp.rstn);
-
+        })
+        .orm();
+    
     MemOutputs {
         addr_bus: addr_bus_out,
         data_bus: data_bus_out,
         val: val_extracted,
-        bus_write: write0 | write1,
-        busy: !step_ready,
+        bus_write: state_w0 | state_w1,
+        //busy: !next_state(state, &inp).eq_constant(STATE_IDLE),
+        busy: !state_idle,
     }
 }
 
