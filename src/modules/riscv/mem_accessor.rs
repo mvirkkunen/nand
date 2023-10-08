@@ -1,25 +1,25 @@
 use super::*;
 
 pub struct MemInputs {
-    nrst: V,
-    clk: V,
-    addr: VVec,
-    data_bus: VVec,
-    val: VVec,
-    unsigned: V,
-    write: V,
-    start: V,
-    size_b: V,
-    size_h: V,
-    size_w: V,
+    pub rstn: V,
+    pub clk: V,
+    pub addr: VVec,
+    pub data_bus: VVec,
+    pub val: VVec,
+    pub unsigned: V,
+    pub write: V,
+    pub start: V,
+    pub size_b: V,
+    pub size_h: V,
+    pub size_w: V,
 }
 
 pub struct MemOutputs {
-    addr_bus: VVec,
-    data_bus: VVec,
-    val: VVec,
-    bus_write: V,
-    ready: V,
+    pub addr_bus: VVec,
+    pub data_bus: VVec,
+    pub bus_write: V,
+    pub val: VVec,
+    pub busy: V,
 }
 
 const STEP_READY: u64 = 0b000;
@@ -32,8 +32,8 @@ const STEP_W1: u64 = 0b100;
 pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
     // calculate low bits of address, and aligned and next aligned memory location
     let addr_low = inp.addr.slice(..2);
-    let addr_0 = inp.addr.slice(2..).name("addr_0");
-    let addr_1 = increment(inp.addr.slice(2..)).name("addr_1");
+    let addr_0 = inp.addr.slice(2..); //.name("addr_0");
+    let addr_1 = increment(inp.addr.slice(2..)); //.name("addr_1");
 
     // 1 if value crosses 32 bit boundary
     let crosses =
@@ -67,14 +67,14 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
         (step_w0, constant(3, STEP_READY)),
 
         (step_w1, constant(3, STEP_READY)),
-    ], inp.clk, inp.nrst);
+    ], inp.clk, inp.rstn);
 
     // holding buffer for data read from memory
     let buf = vv(32 * 2);
     buf << flip_flop_cond([
         (step_start, inp.data_bus + buf.slice(32..)),
         (step_r0, buf.slice(..32) + inp.data_bus),
-    ], inp.clk, inp.nrst);
+    ], inp.clk, inp.rstn);
 
     // copy of holding buffer deposited with input value
     let val_deposited = [(inp.size_b, 8), (inp.size_h, 16), (inp.size_w, 32)]
@@ -123,7 +123,7 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
                 (0..4).map(move |offs| {
                     // sign or zero extend value to 32 bits
                     let short_val = buf.slice(offs*8..offs*8 + bits);
-                    let ext_bit = cond(inp.unsigned, zero(), short_val.at(bits - 1));
+                    let ext_bit = if_else(inp.unsigned, zero(), short_val.at(bits - 1));
 
                     in_size
                         & addr_low.eq_constant(offs as u64)
@@ -133,14 +133,14 @@ pub fn mem_accessor(inp: MemInputs) -> MemOutputs {
             .orm(),
         one(),
         !inp.write & step_ready,
-        inp.nrst);
+        inp.rstn);
 
     MemOutputs {
         addr_bus: addr_bus_out,
         data_bus: data_bus_out,
         val: val_extracted,
         bus_write: write0 | write1,
-        ready: step_ready,
+        busy: !step_ready,
     }
 }
 
@@ -151,8 +151,11 @@ mod test {
 
     #[test]
     fn test_mem_accessor() {
+        const MEM_SIZE: usize = 16;
+        const ADDR_BITS: usize = MEM_SIZE.ilog2() as usize;
+
         struct Inputs {
-            nrst: Input,
+            rstn: Input,
             clk: Input,
             addr: Input,
             addr_bus: Input,
@@ -171,14 +174,14 @@ mod test {
             //addr_bus: Output,
             data_bus: Output,
             val: Output,
-            ready: Output,   
+            busy: Output,   
         }
 
         let ((inp, out), mut sim) = build_simulator::<ChangeListSimulator, _>(|| {
-            let (nrst_i, nrst) = input_bit();
+            let (rstn_i, rstn) = input_bit();
             let (clk_i, clk) = input_bit();
-            let (addr_i, addr) = input(4);
-            let (in_addr_bus_i, in_addr_bus) = input(2);
+            let (addr_i, addr) = input(ADDR_BITS);
+            let (in_addr_bus_i, in_addr_bus) = input(ADDR_BITS - 2);
             let (in_data_bus_i, in_data_bus) = input(32);
             let (in_bus_write_i, in_bus_write) = input_bit();
             let (val_i, val) = input(32);
@@ -189,25 +192,25 @@ mod test {
             let (size_h_i, size_h) = input_bit();
             let (size_w_i, size_w) = input_bit();
 
-            nrst.name("nrst");
+            rstn.name("rstn");
             clk.name("clk");
             start.name("start");
 
-            let addr_bus = vv(2);
+            let addr_bus = vv(ADDR_BITS - 2);
             let data_bus = vv(32);
             let bus_write = v();
 
             let mem_data_bus_out = ram(
-                4,
+                MEM_SIZE,
                 addr_bus,
                 data_bus,
                 bus_write,
                 one(),
                 clk,
-                nrst);
+                rstn);
             
             let acc_out = mem_accessor(MemInputs {
-                nrst,
+                rstn,
                 clk,
                 addr,
                 data_bus,
@@ -224,11 +227,11 @@ mod test {
             data_bus << (in_data_bus | acc_out.data_bus | mem_data_bus_out).name("bus_data");
             bus_write << (in_bus_write | acc_out.bus_write).name("bus_write");
             
-            acc_out.ready.name("ready");
+            acc_out.busy.name("busy");
 
             (
                 Inputs {
-                    nrst: nrst_i,
+                    rstn: rstn_i,
                     clk: clk_i,
                     addr: addr_i,
                     addr_bus: in_addr_bus_i,
@@ -246,7 +249,7 @@ mod test {
                     //addr_bus: acc.addr_bus.output(),
                     data_bus: data_bus.output(),
                     val: acc_out.val.output(),
-                    ready: acc_out.ready.output(),
+                    busy: acc_out.busy.output(),
                 }
             )
         });
@@ -261,7 +264,7 @@ mod test {
             sim.snapshot();
         }
 
-        for addr in 0..8 {
+        for addr in 0..(MEM_SIZE - 4) {
             for (write, unsigned) in [(false, false), (false, true), (true, false)] {
                 let vals = if write { [0x11223399u64, 0xbadf00d5u64].as_slice() } else { &[0u64] };
                 for val in vals.iter().copied() {
@@ -272,12 +275,12 @@ mod test {
 
                         sim.clear();
 
-                        sim.set(&inp.nrst, false);
+                        sim.set(&inp.rstn, false);
                         sim.set(&inp.clk, false);
                         sim.step_until_settled(1000);
                         sim.snapshot();
 
-                        sim.set(&inp.nrst, true);
+                        sim.set(&inp.rstn, true);
                         sim.step_until_settled(1000);
                         sim.snapshot();
 
@@ -294,9 +297,9 @@ mod test {
                         sim.set(&inp.start, false);
 
                         // initialize ram with default data
-                        let mem: [u8; 16] = std::array::from_fn(|i| i as u8);
+                        let mem: [u8; MEM_SIZE] = std::array::from_fn(|i| i as u8);
 
-                        for addr in 0..4 {
+                        for addr in 0..(MEM_SIZE / 4) {
                             sim.set(&inp.addr_bus, addr as u64);
                             sim.set(&inp.data_bus, u64::from(u32::from_le_bytes(mem[addr*4..(addr+1)*4].try_into().unwrap())));
                             sim.set(&inp.data_bus_write, true);
@@ -327,7 +330,7 @@ mod test {
                             sim.snapshot();
                         }
 
-                        assert_eq!(1, sim.get::<u64>(&out.ready));
+                        assert_eq!(0, sim.get::<u64>(&out.busy));
                         
                         if write {
                             let mut expected = mem;
@@ -336,9 +339,9 @@ mod test {
                             expected[addr..addr + bytes].copy_from_slice(&val.to_le_bytes()[..bytes]);
 
                             // read data back from ram
-                            let mut result: [u8; 16] = [0; 16];
+                            let mut result: [u8; MEM_SIZE] = [0; MEM_SIZE];
 
-                            for read_addr in 0..4 {
+                            for read_addr in 0..(MEM_SIZE / 4) {
                                 sim.set(&inp.addr_bus, read_addr as u64);
 
                                 step(&mut sim, &inp.clk);
@@ -349,7 +352,7 @@ mod test {
                             sim.show();
                             println!("result =   {result:02x?}");
                             println!("expected = {expected:02x?}");
-                            assert_eq!(result, expected);
+                            assert_eq!(result.as_slice(), expected.as_slice());
                         } else {
                             let result = sim.get::<u32>(&out.val);
 
