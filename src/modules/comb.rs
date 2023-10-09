@@ -191,6 +191,11 @@ impl<T> VVecMatrix for T where T: IntoIterator<Item=VVec> {
         } else if vvs.len() == 1 {
             return vvs[0];
         } else {
+            let len = vvs[0].len();
+            if !vvs.iter().all(|vv| vv.len() == len) {
+                panic!("V size mismatch");
+            }
+
             (0..vvs[0].len())
                 .map(|index| {
                     vvs.iter().map(|vv| vv.at(index)).vv().orv()

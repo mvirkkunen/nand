@@ -28,20 +28,28 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
 
     assert!(inp.data_bus.len() == 32);
 
-    let vectorn0 = flip_flop(constant(1, 1), one(), clk, rstn);
+    let vector_reset = !flip_flop([rstn].vv(), one(), clk, rstn).at(0);
 
-    vectorn0.at(0).name("cpu_vectorn0");
+    vector_reset.name("cpu_vector_reset");
+    vector_reset.output();
 
-    let vectorn = flip_flop(vectorn0, one(), clk, rstn).at(0);
+    let vector_next = !flip_flop([!vector_reset].vv(), one(), clk, rstn).at(0);
 
-    vectorn.name("cpu_vectorn");
+    vector_next.name("cpu_vector_next");
+
+    let vector_done = flip_flop([vector_next].vv(), one(), clk, rstn).at(0);
+
+    vector_done.name("cpu_vector_done");
+    vector_done.output();
+
+    let vector_addr = constant(32, 0);
 
     let pc = vv(32);
 
-    let do_start_ins = v();
+    let do_next_ins = v();
 
     let ins_buf = flip_flop_cond([
-        (do_start_ins, data_bus_in),
+        (do_next_ins, data_bus_in),
     ], clk, rstn);
 
     ins_buf.name("cpu_ins_buf");
@@ -89,8 +97,11 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
     vname!(ins_jal);
 
     let result = vv(32);
+
+    let next_ins_pc = adder(pc, constant(32, 4), zero()).0;
     
     let do_result_to_rd = ins_addi | ins_add | ins_lui;
+    let do_next_ins_pc_to_rd = ins_jal;
 
     let regs: Vec<VVec> = decoder(rd_index)
         .iter()
@@ -102,6 +113,7 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
                 flip_flop_cond(
                     [
                         (sel & do_result_to_rd, result),
+                        (sel & do_next_ins_pc_to_rd, next_ins_pc),
                     ],
                     clk,
                     rstn)
@@ -133,15 +145,8 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
         .map(|(index, sel)| sel & regs[index])
         .orm();
 
-    vname!(rs1_val);
-    vname!(rs2_val);
-
-    vname!(imm_i);
-
-    let prev_pc = flip_flop(pc, one(), clk, rstn);
-
     let alu = alu(AluInputs {
-        s1: (ins_jal & prev_pc) | (!ins_jal & rs1_val),
+        s1: (ins_jal & pc) | (!ins_jal & rs1_val),
         s2: (ins_addi & imm_i) | (ins_add & rs2_val) | (ins_jal & imm_j) | (ins_lw & imm_i) | (ins_sw & imm_s),
         op_add: ins_jal | ins_addi | ins_add | ins_lw | ins_sw,
         op_sub: zero(),
@@ -171,37 +176,30 @@ pub fn riscv_cpu(inp: CpuInputs) -> CpuOutputs {
         size_w: ins_sw,
     });
 
-    do_start_ins << (!mem.busy & vectorn);
-    vname!(do_start_ins);
-    vname!(mem_start);
+    do_next_ins << !(mem.busy | vector_next);
     
     result << cond([
         (ins_lui, imm_u),
         (ins_lw, mem.val),
     ], alu.result);
 
-    let do_data_bus_to_pc = !vectorn;
-    let do_result_to_pc = ins_jal;
-    let do_increment_pc = do_start_ins;
+    let next_pc = cond([
+        (vector_next, data_bus_in),
+        (vector_done, pc),
+        (ins_jal, result),
+        (do_next_ins, next_ins_pc),
+    ], pc);
 
-    pc << flip_flop_cond([
-        (do_data_bus_to_pc, data_bus_in),
-        (do_result_to_pc, result),
-        (do_increment_pc, adder(pc, constant(32, 4), zero()).0),
-    ], clk, rstn);
+    pc << flip_flop(next_pc, one(), clk, rstn);
 
-    vectorn.name("vectorn");
-    do_data_bus_to_pc.name("do_data_bus_to_pc");
-    do_result_to_pc.name("do_result_to_pc");
-    do_increment_pc.name("do_increment_pc");
-    mem.busy.name("mem_busy");
+    next_pc.name("next_pc");
     pc.name("pc");
     vname!(result);
-    vname!(imm_s);
 
-    let addr_bus_out = mem.addr_bus
-        | (!mem.busy & !ins_jal & pc.slice(2..))
-        | (!mem.busy & ins_jal & result.slice(2..));
+    let addr_bus_out = cond([
+        (vector_next, vector_addr.slice(2..)),
+        (mem.busy, mem.addr_bus),
+    ], next_pc.slice(2..));
 
     CpuOutputs {
         addr_bus: addr_bus_out,
@@ -294,13 +292,13 @@ mod test {
         });
 
         fn step(sim: &mut ChangeListSimulator, clk: &Input) {
-            sim.set(clk, false);
             sim.step_until_settled(1000);
             sim.snapshot();
-    
+
             sim.set(clk, true);
             sim.step_until_settled(1000);
             sim.snapshot();
+            sim.set(clk, false);
         }
         
         // reset simulator
@@ -341,7 +339,7 @@ mod test {
 
         // run cpu
 
-        for s in 0..15 {
+        for s in 0..32 {
             let addr_bus = sim.get::<u32>(&out.addr_bus);
             let data_bus = sim.get::<u32>(&out.data_bus);
             let bus_write = sim.get::<u32>(&out.bus_write);
